@@ -1,0 +1,17 @@
+[Unit]
+Description=Kill Energy Bill OTA Server
+After=network.target
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/opt/ota-server
+EnvironmentFile=/etc/ota-server/env
+ExecStart=/opt/ota-server/ota-server
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=yes
+
+[Install]
+WantedBy=multi-user.target
