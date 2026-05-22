@@ -1,7 +1,12 @@
 package main
 
 import (
+	"crypto/ed25519"
+	"crypto/x509"
+	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
+	"encoding/pem"
 	"fmt"
 	"log"
 	"net/http"
@@ -20,10 +25,21 @@ const (
 
 var adminToken = os.Getenv("ADMIN_TOKEN")
 
+// signingPubKey is loaded once at startup and used to verify every /admin/release call.
+var signingPubKey ed25519.PublicKey
+
+// signingPubKeyPEM is the public half of the Ed25519 firmware signing keypair.
+// The private key lives offline (on the release machine) and is never committed.
+const signingPubKeyPEM = `-----BEGIN PUBLIC KEY-----
+MCowBQYDK2VwAyEAKqtn7wN5Bn/SPojo8jZ3iOS8twKG0nXcNz5Zv/RD+Zs=
+-----END PUBLIC KEY-----`
+
 type Manifest struct {
 	Version    string    `json:"version"`
 	URL        string    `json:"url"`
-	MD5        string    `json:"md5"`
+	SHA256     string    `json:"sha256"`
+	Ed25519Sig string    `json:"ed25519_sig"`
+	MD5        string    `json:"md5,omitempty"` // kept for reading legacy manifests; not sent to devices
 	Mandatory  bool      `json:"mandatory"`
 	Notes      string    `json:"notes"`
 	ReleasedAt time.Time `json:"released_at"`
@@ -33,7 +49,8 @@ type CheckResponse struct {
 	UpdateAvailable bool   `json:"update_available"`
 	Version         string `json:"version,omitempty"`
 	URL             string `json:"url,omitempty"`
-	MD5             string `json:"md5,omitempty"`
+	SHA256          string `json:"sha256,omitempty"`
+	Ed25519Sig      string `json:"ed25519_sig,omitempty"`
 	Mandatory       bool   `json:"mandatory,omitempty"`
 	Notes           string `json:"notes,omitempty"`
 }
@@ -46,16 +63,38 @@ type CheckinPayload struct {
 }
 
 type ReleasePayload struct {
-	Channel   string `json:"channel"`
-	Version   string `json:"version"`
-	MD5       string `json:"md5"`
-	Mandatory bool   `json:"mandatory"`
-	Notes     string `json:"notes"`
+	Channel    string `json:"channel"`
+	Version    string `json:"version"`
+	SHA256     string `json:"sha256"`
+	Ed25519Sig string `json:"ed25519_sig"`
+	Mandatory  bool   `json:"mandatory"`
+	Notes      string `json:"notes"`
+}
+
+func loadSigningPubKey(pemStr string) (ed25519.PublicKey, error) {
+	block, _ := pem.Decode([]byte(pemStr))
+	if block == nil {
+		return nil, fmt.Errorf("failed to decode PEM block")
+	}
+	pub, err := x509.ParsePKIXPublicKey(block.Bytes)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse public key: %w", err)
+	}
+	k, ok := pub.(ed25519.PublicKey)
+	if !ok {
+		return nil, fmt.Errorf("key is not Ed25519")
+	}
+	return k, nil
 }
 
 func main() {
 	if adminToken == "" {
 		log.Fatal("ADMIN_TOKEN environment variable is not set")
+	}
+	var err error
+	signingPubKey, err = loadSigningPubKey(signingPubKeyPEM)
+	if err != nil {
+		log.Fatalf("failed to load signing public key: %v", err)
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/ota/check", handleCheck)
@@ -83,7 +122,8 @@ func handleCheck(w http.ResponseWriter, r *http.Request) {
 			UpdateAvailable: true,
 			Version:         manifest.Version,
 			URL:             manifest.URL,
-			MD5:             manifest.MD5,
+			SHA256:          manifest.SHA256,
+			Ed25519Sig:      manifest.Ed25519Sig,
 			Mandatory:       manifest.Mandatory,
 			Notes:           manifest.Notes,
 		}
@@ -118,11 +158,26 @@ func handleRelease(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid JSON", http.StatusBadRequest)
 		return
 	}
+	hashBytes, err := hex.DecodeString(p.SHA256)
+	if err != nil || len(hashBytes) != 32 {
+		http.Error(w, "invalid sha256: must be 64-char hex string of SHA-256 hash", http.StatusBadRequest)
+		return
+	}
+	sigBytes, err := base64.StdEncoding.DecodeString(p.Ed25519Sig)
+	if err != nil || len(sigBytes) != 64 {
+		http.Error(w, "invalid ed25519_sig: must be base64-encoded 64-byte Ed25519 signature", http.StatusBadRequest)
+		return
+	}
+	if !ed25519.Verify(signingPubKey, hashBytes, sigBytes) {
+		http.Error(w, "signature verification failed", http.StatusForbidden)
+		return
+	}
 	p.Channel = sanitizeChannel(p.Channel)
 	m := Manifest{
 		Version:    p.Version,
 		URL:        fmt.Sprintf("%s/files/%s/killbill-%s.bin", baseURL, p.Channel, p.Version),
-		MD5:        p.MD5,
+		SHA256:     p.SHA256,
+		Ed25519Sig: p.Ed25519Sig,
 		Mandatory:  p.Mandatory,
 		Notes:      p.Notes,
 		ReleasedAt: time.Now().UTC(),
