@@ -254,14 +254,18 @@ firmware_signing_private.pem
 ## Checklist
 
 - [x] TLS termination confirmed (Cloudflare Tunnel — no server changes needed)
-- [ ] Extract root CA PEM from `firmware.local-share.com` cert chain; share with firmware team
+- [x] Extract root CA PEM from `firmware.local-share.com` cert chain; share with firmware team
+      → GTS Root R4 cross-signed by GlobalSign Root CA (embedded in firmware config.h)
 - [ ] Check `firmware.kill-energy-bill.com` uses same root CA; confirm with firmware team
-- [ ] Generate Ed25519 keypair; store private key securely (out of repo)
-- [ ] Commit `firmware_signing_public.pem` to repo
-- [ ] Share raw 32-byte public key (`xxd -i` output) with firmware team
-- [ ] Add SHA256 + Ed25519Sig to Manifest, CheckResponse, ReleasePayload in main.go
-- [ ] Deprecate MD5 in CheckResponse (keep reading it from disk for one cycle)
-- [ ] Add server-side signature verification in handleRelease
-- [ ] Write release.sh; add private key to .gitignore
+      → domain unreachable at time of writing; confirm when live
+- [x] Generate Ed25519 keypair; store private key securely (out of repo)
+      → firmware_signing_private.pem generated locally; in .gitignore
+- [x] Commit `firmware_signing_public.pem` to repo
+- [x] Share raw 32-byte public key (`xxd -i` output) with firmware team
+      → embedded in firmware config.h as OTA_SIGNING_PUBKEY
+- [x] Add SHA256 + Ed25519Sig to Manifest, CheckResponse, ReleasePayload in main.go
+- [x] Deprecate MD5 in CheckResponse (keep reading it from disk for one cycle)
+- [x] Add server-side signature verification in handleRelease
+- [x] Write release.sh; add private key to .gitignore
 - [ ] Deploy updated server
 - [ ] Smoke-test: release a test binary, verify /ota/check returns sha256 + ed25519_sig
