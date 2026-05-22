@@ -269,3 +269,39 @@ firmware_signing_private.pem
 - [x] Write release.sh; add private key to .gitignore
 - [ ] Deploy updated server
 - [ ] Smoke-test: release a test binary, verify /ota/check returns sha256 + ed25519_sig
+
+---
+
+## Pending: TLS cert pinning for kill-energy-bill.com cloud API
+
+The firmware calls `https://kill-energy-bill.com/api/v1/` from two places
+(`doCloudRegister` and `pollCloudCommands` in `KillEnergyBillArduino.ino`).
+Both currently use `client.setInsecure()` because the domain is not live yet —
+so there is no active risk (DNS fails, nothing is transmitted).
+
+**When `kill-energy-bill.com` goes live, do this before the domain serves real traffic:**
+
+1. Extract the root CA from the cert chain:
+   ```bash
+   openssl s_client -connect kill-energy-bill.com:443 -showcerts 2>/dev/null
+   ```
+   The last certificate in the output is the root CA to embed.
+
+2. Add it to `firmware/config.h` (kill-energy-bill repo):
+   ```cpp
+   static const char CLOUD_TLS_CA_CERT[] PROGMEM = R"EOF(
+   -----BEGIN CERTIFICATE-----
+   <paste root CA PEM here>
+   -----END CERTIFICATE-----
+   )EOF";
+   ```
+   If it is the same root as `OTA_TLS_CA_CERT` (both behind Cloudflare/Google),
+   you can reuse that constant instead of adding a new one.
+
+3. In `KillEnergyBillArduino.ino`, replace both `setInsecure()` calls that have a
+   `TODO: setCACert(CLOUD_TLS_CA_CERT)` comment with:
+   ```cpp
+   client.setCACert(CLOUD_TLS_CA_CERT);
+   ```
+
+4. Build, flash, and verify the cloud registration still succeeds.
