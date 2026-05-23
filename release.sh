@@ -20,15 +20,15 @@ OTA_HOST="${OTA_HOST:-root@192.168.176.120}"
 [[ -f "$BIN" ]]         || { echo "Binary not found: $BIN"; exit 1; }
 [[ -f "$PRIVATE_KEY" ]] || { echo "Signing key not found: $PRIVATE_KEY"; exit 1; }
 
-# Compute SHA-256 of firmware binary
-SHA256=$(sha256sum "$BIN" | awk '{print $1}')
+# Compute SHA-256 of firmware binary (compatible with macOS and Linux)
+SHA256=$(openssl dgst -sha256 -hex "$BIN" | awk '{print $2}')
 echo "SHA256: $SHA256"
 
 # Sign: Ed25519 signature over the raw 32-byte SHA-256 hash (not the hex string)
 TMPFILE=$(mktemp)
 trap 'rm -f "$TMPFILE"' EXIT
 printf '%s' "$SHA256" | xxd -r -p > "$TMPFILE"
-SIG=$(openssl pkeyutl -sign -inkey "$PRIVATE_KEY" -rawin -in "$TMPFILE" | base64 -w0)
+SIG=$(openssl pkeyutl -sign -inkey "$PRIVATE_KEY" -rawin -in "$TMPFILE" | base64 | tr -d '\n')
 echo "Signature: ${SIG:0:16}..."
 
 # Upload binary to server

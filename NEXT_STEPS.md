@@ -22,44 +22,31 @@ Code is production-ready. Remaining work is operational (deploy + smoke-test).
 
 ---
 
+## Completed (2026-05-23)
+
+- [x] Deploy v1.0.0 binary to `root@192.168.176.120` — `keb-ota-server v1.0.0 listening on :8080`
+- [x] nginx `/health` location added and reloaded
+- [x] `https://firmware.local-share.com/health` → `{"status":"ok","version":"1.0.0"}`
+- [x] Firmware v0.1.7 signed and released to stable channel
+  - SHA256: `fdb35afff60fcaafd6616aa090498e49ba70abd0d4f6ad99dd675bc03f416aa5`
+  - `/ota/check?version=0.1.6&channel=stable` → `update_available: true, version: 0.1.7`
+  - `/ota/check?version=0.1.7&channel=stable` → `update_available: false`
+- [x] ESP32 (killbill_c085b8) flashed with v0.1.6 via USB (`/dev/cu.usbserial-1440`)
+- [x] Device boots correctly, runs v0.1.6 firmware
+
 ## Pending
 
-### 1. Deploy to server
+### 1. Device OTA pull (on-device test)
 
-```bash
-./deploy.sh root@192.168.176.120
+Device is flashed with v0.1.6 and the server has v0.1.7 ready. On the next boot
+with WiFi access, the device will automatically detect and flash v0.1.7.
+
+Plug the device into its home network (`Van Houtte 27`) and reset it. Watch serial:
 ```
-
-First-time setup on the server (if not already done):
-```bash
-# Create firmware directories
-ssh root@192.168.176.120 'mkdir -p /var/www/firmware/{stable,beta} && chown -R www-data:www-data /var/www/firmware'
-
-# Create env file with admin token (if not present)
-ssh root@192.168.176.120 'mkdir -p /etc/ota-server && echo "ADMIN_TOKEN=<secret>" > /etc/ota-server/env && chmod 600 /etc/ota-server/env'
-
-# Install and enable systemd service (if not present)
-scp systemd/ota-server.service root@192.168.176.120:/etc/systemd/system/
-ssh root@192.168.176.120 'systemctl daemon-reload && systemctl enable ota-server'
-
-# Install nginx config (if not present)
-scp nginx/firmware.conf root@192.168.176.120:/etc/nginx/sites-available/firmware.conf
-scp nginx/ota-ratelimit.conf root@192.168.176.120:/etc/nginx/conf.d/ota-ratelimit.conf
-ssh root@192.168.176.120 'ln -sf /etc/nginx/sites-available/firmware.conf /etc/nginx/sites-enabled/ && nginx -t && systemctl reload nginx'
+[OTA] Update beschikbaar: 0.1.6 → 0.1.7
+[OTA] Firmware geverifieerd en geflasht — herstarten...
 ```
-
-### 2. Smoke-test: release mock firmware and verify device OTA
-
-See `test-mock.sh` — signs and releases a mock binary, then verifies `/ota/check` returns the right payload.
-
-```bash
-export ADMIN_TOKEN=<secret>
-./test-mock.sh
-```
-
-After the server-side check passes, flash the ESP32 with the current firmware
-(version 0.1.6) and watch the serial monitor — it should detect the 0.1.7 mock
-on the server, download, verify, and attempt to flash.
+After reboot the device reports `v0.1.7` in checkin logs on the server.
 
 ### 3. firmware.kill-energy-bill.com — secondary OTA server
 

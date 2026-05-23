@@ -43,15 +43,15 @@ echo "    Binary:  $BIN"
 echo "    Version: $MOCK_VERSION (channel: $MOCK_CHANNEL)"
 echo ""
 
-# SHA-256
-SHA256=$(sha256sum "$BIN" | awk '{print $1}')
+# SHA-256 (compatible with macOS and Linux)
+SHA256=$(openssl dgst -sha256 -hex "$BIN" | awk '{print $2}')
 echo "    SHA256:  $SHA256"
 
 # Ed25519 signature over raw 32-byte hash
 TMPFILE=$(mktemp)
 trap 'rm -f "$TMPFILE"' EXIT
 printf '%s' "$SHA256" | xxd -r -p > "$TMPFILE"
-SIG=$(openssl pkeyutl -sign -inkey "$PRIVATE_KEY" -rawin -in "$TMPFILE" | base64 -w0)
+SIG=$(openssl pkeyutl -sign -inkey "$PRIVATE_KEY" -rawin -in "$TMPFILE" | base64 | tr -d '\n')
 echo "    Sig:     ${SIG:0:20}..."
 
 # Upload binary to server
