@@ -18,9 +18,10 @@ import (
 )
 
 const (
-	listenAddr  = ":8080"
-	firmwareDir = "/var/www/firmware"
-	baseURL     = "https://firmware.local-share.com"
+	serverVersion = "1.0.0"
+	listenAddr    = ":8080"
+	firmwareDir   = "/var/www/firmware"
+	baseURL       = "https://firmware.local-share.com"
 )
 
 var adminToken = os.Getenv("ADMIN_TOKEN")
@@ -97,11 +98,16 @@ func main() {
 		log.Fatalf("failed to load signing public key: %v", err)
 	}
 	mux := http.NewServeMux()
+	mux.HandleFunc("/health", handleHealth)
 	mux.HandleFunc("/ota/check", handleCheck)
 	mux.HandleFunc("/ota/checkin", handleCheckin)
 	mux.HandleFunc("/admin/release", handleRelease)
-	log.Printf("OTA server listening on %s", listenAddr)
+	log.Printf("keb-ota-server v%s listening on %s", serverVersion, listenAddr)
 	log.Fatal(http.ListenAndServe(listenAddr, mux))
+}
+
+func handleHealth(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, map[string]string{"status": "ok", "version": serverVersion})
 }
 
 func handleCheck(w http.ResponseWriter, r *http.Request) {
@@ -200,8 +206,12 @@ func loadManifest(channel string) (*Manifest, error) {
 }
 
 func saveManifest(channel string, m Manifest) error {
+	dir := filepath.Join(firmwareDir, channel)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return fmt.Errorf("create firmware dir: %w", err)
+	}
 	data, _ := json.MarshalIndent(m, "", "  ")
-	return os.WriteFile(filepath.Join(firmwareDir, channel, "manifest.json"), data, 0644)
+	return os.WriteFile(filepath.Join(dir, "manifest.json"), data, 0644)
 }
 
 func writeJSON(w http.ResponseWriter, v any) {
